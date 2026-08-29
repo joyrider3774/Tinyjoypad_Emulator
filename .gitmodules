@@ -1,0 +1,6 @@
+[submodule "SDL3"]
+	path = SDL3
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "simavr"]
+	path = simavr
+	url = https://github.com/buserror/simavr.git
