@@ -191,6 +191,30 @@ its own 2:1 shape rather than stretched. Messages such as *Clock: 8 MHz* still
 appear briefly along the bottom, then disappear again. The browser keeps its
 chrome in fullscreen, since it needs it.
 
+### Saved games
+
+Several games keep high scores or progress in the ATtiny85's 512 bytes of
+EEPROM, which survives a power cycle on real hardware. The emulator gives them
+the same: the EEPROM is mirrored to a file named after the game, so
+`tiny-tris_v3.ino.hex` saves to `tiny-tris_v3.ino.eeprom` beside it.
+
+This is entirely automatic — read back when the game starts, written out as you
+play. There is no save key and nothing to remember. Writes are coalesced and
+land about a second after the game stops touching its EEPROM, so a save is
+safe even if the emulator is killed rather than closed.
+
+A file is only created once a game actually writes to its EEPROM, so browsing
+through a folder of games does not scatter save files around. Reset (`F2`)
+keeps the EEPROM, just as resetting the real hardware does.
+
+The file is a raw dump, one byte per EEPROM byte — not Intel HEX, so it is not
+directly flashable with avrdude. A short file is padded with `0xff`, which is
+what erased EEPROM reads as.
+
+Games that use it include Tiny Tris, Tiny Invaders v4.2, obono's Test Tool and
+several of the attiny-arcade titles; the list is not exhaustive, since a game
+may only write its EEPROM on game over.
+
 ### The .hex browser
 
 TinyJoypad games tend to live scattered deep inside source trees, so as well as

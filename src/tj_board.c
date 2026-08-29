@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "avr_adc.h"
+#include "avr_eeprom.h"
 #include "avr_ioport.h"
 #include "avr_usi.h"
 #include "sim_hex.h"
@@ -423,6 +424,45 @@ tj_board_set_button(tj_board_t *b, tj_button_t btn, bool down)
 	if (b->loaded && btn == TJ_BTN_FIRE)
 		apply_external_pulls(b);
 	/* The ladders are sampled on demand by adc_trigger_hook(). */
+}
+
+/* ------------------------------------------------------------------ */
+/* EEPROM                                                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * simavr supplies the two ioctls but no persistence of its own - it can load
+ * EEPROM out of a firmware image and never writes it back - so the file side
+ * lives in the front end.  Note that nothing here runs on reset: simavr's
+ * EEPROM module has no reset handler, so the contents survive a reset just as
+ * they do on the real chip.
+ */
+uint32_t
+tj_board_eeprom_size(tj_board_t *b)
+{
+	if (!b->loaded || !b->avr)
+		return 0;
+	return b->avr->e2end + 1;
+}
+
+bool
+tj_board_eeprom_get(tj_board_t *b, uint8_t *out, uint32_t size)
+{
+	avr_eeprom_desc_t desc = { .ee = out, .offset = 0, .size = size };
+
+	if (!b->loaded || !b->avr || !out || !size)
+		return false;
+	return avr_ioctl(b->avr, AVR_IOCTL_EEPROM_GET, &desc) >= 0;
+}
+
+bool
+tj_board_eeprom_set(tj_board_t *b, const uint8_t *data, uint32_t size)
+{
+	avr_eeprom_desc_t desc = { .ee = (uint8_t *)data, .offset = 0, .size = size };
+
+	if (!b->loaded || !b->avr || !data || !size)
+		return false;
+	return avr_ioctl(b->avr, AVR_IOCTL_EEPROM_SET, &desc) >= 0;
 }
 
 /* ------------------------------------------------------------------ */

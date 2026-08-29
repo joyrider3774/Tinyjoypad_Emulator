@@ -36,6 +36,15 @@
 #define TJ_TURBO_SPEED   4
 #define TJ_MAX_GAMEPADS  8
 
+/* Largest EEPROM we might see; an ATtiny85 has 512 bytes. */
+#define TJ_EEPROM_MAX    1024
+/*
+ * How long the EEPROM must sit unchanged before it is written out.  Games
+ * write a score a byte at a time, so this coalesces a burst into one file
+ * write while still landing long before the player can quit.
+ */
+#define TJ_EEPROM_SETTLE_MS 750
+
 /* The panel fills the body area exactly: 128x64 at 4x. */
 #define PANEL_X 0
 #define PANEL_Y TJ_HEADER_H
@@ -74,6 +83,15 @@ typedef struct {
 
 	char             status[256];
 	Uint64           status_until;
+
+	/* EEPROM save file for the loaded game; see the eeprom_* functions. */
+	char             eeprom_path[1152];
+	uint8_t          eeprom_last[TJ_EEPROM_MAX];
+	uint32_t         eeprom_size;
+	bool             eeprom_active;
+	bool             eeprom_dirty;
+	bool             eeprom_warned;
+	Uint64           eeprom_changed_ms;
 
 	Uint64           last_pump_ns;   /* only used when there is no audio device */
 
@@ -126,6 +144,129 @@ current_theme(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* EEPROM save files                                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Games keep high scores and progress in the ATtiny85's 512 bytes of EEPROM,
+ * which on real hardware survives being switched off.  To get the same here,
+ * the contents are mirrored to a file named after the ROM - "tinytris.ino.hex"
+ * saves to "tinytris.ino.eeprom" - loaded automatically when the game starts
+ * and written back automatically as it plays.  The file is a raw dump, one
+ * byte per EEPROM byte, not Intel HEX.
+ *
+ * A file is only ever created once a game actually changes its EEPROM, so
+ * merely opening a game does not litter the folder next to it.
+ */
+static void
+eeprom_path_for(char *out, size_t out_size, const char *rom_path)
+{
+	size_t len = SDL_strlen(rom_path);
+
+	/* Replace a trailing .hex rather than appending to it. */
+	if (len > 4 && SDL_strcasecmp(rom_path + len - 4, ".hex") == 0)
+		len -= 4;
+
+	if (len >= out_size)
+		len = out_size - 1;
+	SDL_memcpy(out, rom_path, len);
+	out[len] = 0;
+	SDL_strlcat(out, ".eeprom", out_size);
+}
+
+static void
+eeprom_write_now(void)
+{
+	if (!app.eeprom_active || !app.eeprom_dirty)
+		return;
+
+	SDL_IOStream *io = SDL_IOFromFile(app.eeprom_path, "wb");
+	if (!io) {
+		/*
+		 * Read-only folder, most likely.  Say so once per game rather than on
+		 * every save, which would be every high score.
+		 */
+		if (!app.eeprom_warned) {
+			app.eeprom_warned = true;
+			set_status("Cannot save EEPROM here: %s", SDL_GetError());
+		}
+		return;
+	}
+	SDL_WriteIO(io, app.eeprom_last, app.eeprom_size);
+	SDL_CloseIO(io);
+	app.eeprom_dirty = false;
+}
+
+/* Start tracking the EEPROM of a freshly loaded game, restoring any save. */
+static void
+eeprom_open(const char *rom_path)
+{
+	uint32_t size = tj_board_eeprom_size(&app.board);
+
+	app.eeprom_active = false;
+	app.eeprom_dirty = false;
+	app.eeprom_warned = false;
+
+	if (!size)
+		return;
+	if (size > TJ_EEPROM_MAX)
+		size = TJ_EEPROM_MAX;
+	app.eeprom_size = size;
+
+	eeprom_path_for(app.eeprom_path, sizeof(app.eeprom_path), rom_path);
+
+	size_t got = 0;
+	void *saved = SDL_LoadFile(app.eeprom_path, &got);
+	if (saved) {
+		/*
+		 * Short files are padded with 0xff - erased EEPROM - so a save from a
+		 * different chip, or a truncated one, still loads sensibly.
+		 */
+		uint8_t buf[TJ_EEPROM_MAX];
+		SDL_memset(buf, 0xff, size);
+		SDL_memcpy(buf, saved, got < size ? got : size);
+		SDL_free(saved);
+		tj_board_eeprom_set(&app.board, buf, size);
+	}
+
+	tj_board_eeprom_get(&app.board, app.eeprom_last, size);
+	app.eeprom_active = true;
+}
+
+/* Flush and stop tracking, before the board is torn down. */
+static void
+eeprom_close(void)
+{
+	eeprom_write_now();
+	app.eeprom_active = false;
+	app.eeprom_dirty = false;
+}
+
+/*
+ * Watch for the game changing its EEPROM.  Polling 512 bytes once a frame is
+ * far cheaper than it sounds and needs no hook into simavr.
+ */
+static void
+eeprom_poll(void)
+{
+	uint8_t cur[TJ_EEPROM_MAX];
+
+	if (!app.eeprom_active || !app.board.loaded)
+		return;
+
+	if (tj_board_eeprom_get(&app.board, cur, app.eeprom_size) &&
+		SDL_memcmp(cur, app.eeprom_last, app.eeprom_size) != 0) {
+		SDL_memcpy(app.eeprom_last, cur, app.eeprom_size);
+		app.eeprom_dirty = true;
+		app.eeprom_changed_ms = SDL_GetTicks();
+	}
+
+	if (app.eeprom_dirty &&
+		SDL_GetTicks() - app.eeprom_changed_ms >= TJ_EEPROM_SETTLE_MS)
+		eeprom_write_now();
+}
+
+/* ------------------------------------------------------------------ */
 /* Loading                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -134,6 +275,9 @@ load_rom(const char *path)
 {
 	char name[128];
 	basename_of(name, sizeof(name), path);
+
+	/* Save the outgoing game's EEPROM before its board is torn down. */
+	eeprom_close();
 
 	if (!tj_board_load(&app.board, path, app.cfg.frequency)) {
 		/*
@@ -150,6 +294,7 @@ load_rom(const char *path)
 	}
 
 	app.board.oled.persistence_enabled = app.cfg.persistence;
+	eeprom_open(path);
 	app.load_error[0] = 0;
 	app.show_error = false;
 	SDL_snprintf(app.game_name, sizeof(app.game_name), "%s", name);
@@ -1535,6 +1680,7 @@ main(int argc, char *argv[])
 		apply_inputs_to_board(&in);
 
 		pump_emulation();
+		eeprom_poll();
 		render();
 	}
 
@@ -1555,6 +1701,7 @@ main(int argc, char *argv[])
 
 	tj_config_save(&app.cfg);
 
+	eeprom_close();
 	tj_browser_free(&app.browser);
 	tj_board_free(&app.board);
 	shutdown_sdl();

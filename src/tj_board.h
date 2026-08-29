@@ -106,4 +106,13 @@ void tj_board_run(tj_board_t *b, float *out, int count, int sample_rate);
 /* Current ADC reading of a ladder, for the debug overlay. 0..1023. */
 int tj_board_adc_value(const tj_board_t *b, int channel);
 
+/*
+ * EEPROM access, so the front end can keep it in a file between runs.  Games
+ * use it for high scores and progress, and it survives reset on real hardware
+ * exactly as it does here.  512 bytes on an ATtiny85.
+ */
+uint32_t tj_board_eeprom_size(tj_board_t *b);
+bool tj_board_eeprom_get(tj_board_t *b, uint8_t *out, uint32_t size);
+bool tj_board_eeprom_set(tj_board_t *b, const uint8_t *data, uint32_t size);
+
 #endif /* TJ_BOARD_H */
