@@ -1,4 +1,5 @@
 # TinyJoypad Emulator
+![DownloadCountTotal](https://img.shields.io/github/downloads/joyrider3774/Tinyjoypad_Emulator/total?label=total%20downloads&style=plastic) ![DownloadCountLatest](https://img.shields.io/github/downloads/joyrider3774/Tinyjoypad_Emulator/latest/total?style=plastic) ![LatestVersion](https://img.shields.io/github/v/tag/joyrider3774/Tinyjoypad_Emulator?label=Latest%20version&style=plastic) ![License](https://img.shields.io/github/license/joyrider3774/Tinyjoypad_Emulator?style=plastic)
 
 ![Tiny Pacman running in the emulator](docs/screenshot.png)
 
