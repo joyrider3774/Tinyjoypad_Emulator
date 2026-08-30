@@ -1,0 +1,141 @@
+# Controls when the workflow will run
+on:
+  # Allows you to run this workflow manually target the Actions tab
+  workflow_dispatch:
+
+name: Build
+jobs:
+  build:
+    name: Build ${{matrix.name}}-${{matrix.runson}}_${{ matrix.env }}
+    strategy:
+      matrix:
+        include:
+          - { runson: 'windows-latest',   runsontype: 'windows', sys: 'mingw64', env: 'x86_64', name: 'Tinyjoypad_Emulator', binsuffix: '.exe'}
+          - { runson: 'windows-latest',   runsontype: 'windows', sys: 'mingw32', env: 'i686',   name: 'Tinyjoypad_Emulator', binsuffix: '.exe'}
+          - { runson: 'ubuntu-24.04',     runsontype: 'linux',   sys: 'usr',     env: 'x64',    name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'ubuntu-22.04',     runsontype: 'linux',   sys: 'usr',     env: 'x64',    name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'ubuntu-26.04',     runsontype: 'linux',   sys: 'usr',     env: 'x64',    name: 'Tinyjoypad_Emulator', binsuffix: '',  }
+          - { runson: 'ubuntu-26.04-arm', runsontype: 'linux',   sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',  }
+          - { runson: 'ubuntu-24.04-arm', runsontype: 'linux',   sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'ubuntu-22.04-arm', runsontype: 'linux',   sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'macos-14',         runsontype: 'mac',     sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'macos-15',         runsontype: 'mac',     sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'macos-26',         runsontype: 'mac',     sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'macos-15-intel',   runsontype: 'mac',     sys: 'usr',     env: 'x86_64', name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          - { runson: 'macos-26-intel',   runsontype: 'mac',     sys: 'usr',     env: 'x86_64', name: 'Tinyjoypad_Emulator', binsuffix: '',   }
+          #- { runson: 'ubuntu-24.04',     runsontype: 'appimage',sys: 'usr',     env: 'x64',    name: 'Tinyjoypad_Emulator', binsuffix: '',  }
+          #- { runson: 'ubuntu-24.04-arm', runsontype: 'appimage',sys: 'usr',     env: 'arm64',  name: 'Tinyjoypad_Emulator', binsuffix: '',  }
+
+    runs-on: ${{matrix.runson}}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+        with:
+          # Playdate doesn't touch either vendored SDL2/SDL3 checkout at all
+          # (src/playdate/CMakeLists.txt never references them) - skipping
+          # submodules there avoids cloning two full SDL checkouts for
+          # nothing.
+          submodules: ${{ matrix.runsontype != 'playdate' }}
+
+      - if: ${{ matrix.runsontype == 'windows'}}
+        name: Setup Msys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.sys}}
+          install: >-
+            base-devel
+            mingw-w64-${{matrix.env}}-gcc
+            mingw-w64-${{matrix.env}}-make
+            mingw-w64-${{matrix.env}}-cmake
+            mingw-w64-${{matrix.env}}-ninja
+
+      - if: ${{ matrix.runsontype == 'windows'}}
+        name: Build Game Windows
+        shell: msys2 {0}
+        run: |
+          mkdir build
+          cd build
+          cmake -G "Ninja" -DUSE_VENDORED_SDL=1 ..
+          ninja
+          
+      - if: ${{ matrix.runsontype != 'windows' && matrix.runsontype != 'appimage' && matrix.runsontype != 'playdate'}}
+        name: Build Game Other
+        run: |
+          mkdir build
+          cd build
+          cmake -DUSE_VENDORED_SDL=1 ..
+          make
+
+      - if: ${{ matrix.runsontype == 'mac'}}
+        name: Copy Game And Assets Mac
+        run: |
+          mkdir ./Release
+          mkdir "./Release/${{matrix.name}}.app"
+          mkdir "./Release/${{matrix.name}}.app/Contents"
+          mkdir "./Release/${{matrix.name}}.app/Contents/MacOS"
+          mkdir "./Release/${{matrix.name}}.app/Contents/Resources"
+          cp "build/${{matrix.name}}" "./Release/${{matrix.name}}.app/Contents/MacOS/${{matrix.name}}"
+          cp ./README.md "./Release/"
+          cp ./LICENSE "./Release/"
+          
+          #for PNG
+          mkdir icon.iconset
+          sips -z 16 16 "./icon.png" --out icon.iconset/icon_16x16.png
+          sips -z 32 32 "./icon.png" --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 "./icon.png" --out icon.iconset/icon_32x32.png
+          sips -z 64 64 "./icon.png" --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 "./icon.png" --out icon.iconset/icon_128x128.png
+          sips -z 256 256 "./icon.png" --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 "./icon.png" --out icon.iconset/icon_256x256.png
+          sips -z 512 512 "./icon.png" --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 "./icon.png" --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 "./icon.png" --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o ./icon.icns
+          mv ./icon.icns "./Release/${{matrix.name}}.app/Contents/Resources/icon.icns"
+          
+          #create PList
+          echo "<?xml version='1.0' encoding='UTF-8'?>" > "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "<!DOCTYPE plist PUBLIC '-//Apple Computer//DTD PLIST 1.0//EN' 'http://www.apple.com/DTDs/PropertyList-1.0.dtd'>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "<plist version='1.0'>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "  <dict>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundleExecutable</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>${{matrix.name}}</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundleIdentifier</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>com.github.joyrider3774.${{matrix.name}}</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundleName</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>Crisp Game Library Portable</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundleIconFile</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>icon.icns</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundleShortVersionString</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>0.01</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundleInfoDictionaryVersion</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>6.0</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>CFBundlePackageType</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <string>APPL</string>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>IFMajorVersion</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <integer>0</integer>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <key>IFMinorVersion</key>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "    <integer>1</integer>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "  </dict>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+          echo "</plist>" >> "./Release/${{matrix.name}}.app/Contents/Info.plist"
+      
+      - if: ${{ matrix.runsontype == 'mac'}}
+        name: Ad Hoc Code sign Appl Bundle (Mac)
+        run: |
+          codesign --force --deep -s - "./Release/${{matrix.name}}.app"
+          
+      - if: ${{ matrix.runsontype != 'mac' && matrix.runsontype != 'appimage' && matrix.runsontype != 'playdate'}}
+        name: Copy Game And Assets Other
+        run: |
+          mkdir ./Release
+          mkdir "./Release/${{matrix.name}}"
+          cp "build/${{matrix.name}}${{matrix.binsuffix}}" "./Release/${{matrix.name}}/"
+          cp ./README.md "./Release/${{matrix.name}}/"
+          cp ./LICENSE "./Release/${{matrix.name}}/"
+
+      - if: ${{ matrix.runsontype != 'appimage' && matrix.runsontype != 'playdate'}}
+        name: Store build
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{matrix.name}}-${{matrix.runson}}_${{ matrix.env }}
+          path: ./Release/
