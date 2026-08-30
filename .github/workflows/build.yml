@@ -84,7 +84,7 @@ jobs:
           mkdir "./Release/${{matrix.name}}.app/Contents/Resources"
           cp "build/${{matrix.name}}" "./Release/${{matrix.name}}.app/Contents/MacOS/${{matrix.name}}"
           cp ./README.md "./Release/"
-          cp ./LICENSE "./Release/"
+          cp ./LICENSE.txt "./Release/"
           
           #for PNG
           mkdir icon.iconset
@@ -139,7 +139,7 @@ jobs:
           mkdir "./Release/${{matrix.name}}"
           cp "build/${{matrix.name}}${{matrix.binsuffix}}" "./Release/${{matrix.name}}/"
           cp ./README.md "./Release/${{matrix.name}}/"
-          cp ./LICENSE "./Release/${{matrix.name}}/"
+          cp ./LICENSE.txt "./Release/${{matrix.name}}/"
 
       - if: ${{ matrix.runsontype != 'appimage' && matrix.runsontype != 'playdate'}}
         name: Store build
